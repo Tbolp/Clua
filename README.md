@@ -2,9 +2,9 @@
 
 Clua is used to register c++ classes and functions in lua.
 
-#Example
+# Example
 
-##Register Function
+## Register Function
 <main.cpp>
 ```
 int add(int i, int j) {
@@ -23,7 +23,7 @@ int main(){
 ```
 print(add(1, 2))
 ```
-##Register Class
+## Register Class
 <main.cpp>
 ```
 class Test {
