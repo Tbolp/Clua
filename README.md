@@ -14,7 +14,7 @@ int main(){
 	lua_State* L;
 	L = luaL_newstate();
 	luaL_openlibs(L);
-	clua_register<int(*)(int, int), testfun2>(L, "add");
+	clua_register<int(*)(int, int), add>(L, "add");
 	luaL_dofile(L, "hello.lua");
 	lua_close(L); 
 }
