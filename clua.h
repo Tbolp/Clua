@@ -61,6 +61,14 @@ struct resolve_args<const char*, B...> {
 	}
 };
 
+template<typename C, typename ...B>
+struct resolve_args<C*, B...> {
+	static std::tuple<C*, B...> resolve(lua_State *L, int nargs) {
+		C* i = (C*)lua_touserdata(L, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
+	}
+};
+
 template<typename T>
 struct resolve_fp;
 
@@ -148,13 +156,12 @@ struct process_cfp;
 template<int N, typename C>
 struct process_ccfp;
 
-
 template<typename C>
 struct process_ccfp<0, C> {
 	template<typename Head, typename ...Tail>
 	static void process(lua_State *L, Head t, Tail... args) {
 		C* cls = (C*)lua_newuserdata(L, sizeof(C));
-		memcpy(cls, &C(args...), sizeof(C));
+		new (cls)C(args...); 
 		lua_getglobal(L, clua_class<C>::class_name);
 		lua_setmetatable(L, -2);
 	}
@@ -239,6 +246,13 @@ int clua_ccfunction(lua_State* L) {
 	return 1;
 }
 
+template<typename C>
+int clua_cdfunction(lua_State* L) {
+	C* cls = (C*)lua_touserdata(L, -1);
+	cls->~C();
+	return 0;
+}
+
 template<typename T, T f>
 void clua_register(lua_State *L, const char* n) {
 	int(*F)(lua_State*);
@@ -253,6 +267,9 @@ public:
 		lua_newtable(L);
 		lua_pushvalue(L, -1);
 		lua_setfield(L, -1, "__index");
+		auto cls_dcon = clua_cdfunction<C>;
+		lua_pushcfunction(L, cls_dcon);
+		lua_setfield(L, -2, "__gc");
 		lua_setglobal(L, clua_class<C>::class_name);
 	}
 	template<typename ...Args>
