@@ -2,6 +2,7 @@
 #define CLUA_HEADER
 
 #include <tuple>
+#include <exception>
 
 template<typename ...T>
 struct resolve_args;
@@ -13,60 +14,92 @@ struct resolve_args<> {
 	}
 };
 
+// args is int
 template<typename ...B>
 struct resolve_args<int, B...> {
 	static std::tuple<int, B...> resolve(lua_State *L, int nargs) {
+    if (lua_isinteger(L, -nargs) == 0)
+      throw exception("args is not integer !!!");
 		int i = (int)lua_tointeger(L, -nargs);
 		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
 	}
 };
 
+// args is double
 template<typename ...B>
 struct resolve_args<double, B...> {
 	static std::tuple<double, B...> resolve(lua_State *L, int nargs) {
+    if (lua_isnumber(L, -nargs) == 0)
+      throw exception("args is not double !!!");
 		double i = (double)lua_tonumber(L, -nargs);
 		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
 	}
 };
 
+// args is float
 template<typename ...B>
 struct resolve_args<float, B...> {
 	static std::tuple<float, B...> resolve(lua_State *L, int nargs) {
+    if (lua_isnumber(L, -nargs) == 0)
+      throw exception("args is not float !!!");
 		float i = (float)lua_tonumber(L, -nargs);
 		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
 	}
 };
 
+// args is bool
 template<typename ...B>
 struct resolve_args<bool, B...> {
 	static std::tuple<bool, B...> resolve(lua_State *L, int nargs) {
+    if (lua_isboolean(L, -nargs) == 0)
+      throw exception("args is not bool !!!");
 		bool i = lua_toboolean(L, -nargs) != 0;
 		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
 	}
 };
 
+// args is char *
 template<typename ...B>
 struct resolve_args<char*, B...> {
 	static std::tuple<char*, B...> resolve(lua_State *L, int nargs) {
+    if (lua_isstring(L, -nargs) == 0)
+      throw exception("args is not string !!!");
 		char* i = const_cast<char*>(lua_tostring(L, -nargs));
 		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
 	}
 };
 
+// args is const char*
 template<typename ...B>
 struct resolve_args<const char*, B...> {
 	static std::tuple<const char*, B...> resolve(lua_State *L, int nargs) {
+    if (lua_isstring(L, -nargs) == 0)
+      throw exception("args is not string !!!");
 		const char* i = (lua_tostring(L, -nargs));
 		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
 	}
 };
 
+// args is pointer
 template<typename C, typename ...B>
 struct resolve_args<C*, B...> {
 	static std::tuple<C*, B...> resolve(lua_State *L, int nargs) {
+    if ((lua_isuserdata(L, -nargs) == 0) && (lua_islightuserdata(L, -nargs) == 0))
+      throw exception("args is not pointer !!!");
 		C* i = (C*)lua_touserdata(L, -nargs);
 		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
 	}
+};
+
+// args is class
+template<typename C, typename ...B>
+struct resolve_args<C, B...> {
+  static std::tuple<C, B...> resolve(lua_State *L, int nargs) {
+    if (lua_isuserdata(L, -nargs) == 0)
+      throw exception("args is not class !!!");
+    C* i = (C*)lua_touserdata(L, -nargs);
+    return std::tuple_cat(std::make_tuple(*i), resolve_args<B...>::resolve(L, nargs - 1));
+  }
 };
 
 template<typename T>
@@ -179,6 +212,7 @@ struct process_ccfp {
 template<typename T>
 struct ret_fp;
 
+// return is int
 template<>
 struct ret_fp<int> {
 	static void ret(lua_State *L, int value) {
@@ -186,6 +220,7 @@ struct ret_fp<int> {
 	}
 };
 
+// return is double
 template<>
 struct ret_fp<double> {
 	static void ret(lua_State *L, double value) {
@@ -193,6 +228,7 @@ struct ret_fp<double> {
 	}
 };
 
+// return is float
 template<>
 struct ret_fp<float> {
 	static void ret(lua_State *L, float value) {
@@ -200,6 +236,7 @@ struct ret_fp<float> {
 	}
 };
 
+// return is bool
 template<>
 struct ret_fp<bool> {
 	static void ret(lua_State *L, bool value) {
@@ -207,6 +244,7 @@ struct ret_fp<bool> {
 	}
 };
 
+// return is char *
 template<>
 struct ret_fp<char *> {
 	static void ret(lua_State *L, const char* value) {
@@ -214,11 +252,31 @@ struct ret_fp<char *> {
 	}
 };
 
+// return is const char *
 template<>
 struct ret_fp<const char *> {
 	static void ret(lua_State *L, const char* value) {
 		lua_pushstring(L, value);
 	}
+};
+
+// return is pointer
+template<typename C>
+struct ret_fp<C*> {
+  static void ret(lua_State *L, C* value) {
+    lua_pushlightuserdata(L, (void *)value);
+  }
+};
+
+// return is class
+template<typename C>
+struct ret_fp {
+  static void ret(lua_State *L, C value) {
+    lua_newuserdata(L, sizeof(C));
+    new (cls)C(value);
+    lua_getglobal(L, clua_class<C>::class_name);
+    lua_setmetatable(L, -2);
+  }
 };
 
 template<typename T, T f>
@@ -270,6 +328,8 @@ public:
 		auto cls_dcon = clua_cdfunction<C>;
 		lua_pushcfunction(L, cls_dcon);
 		lua_setfield(L, -2, "__gc");
+    if (clua_class<C>::class_name == nullptr)
+      throw std::exception("Class doesn't have name in lua!!!");
 		lua_setglobal(L, clua_class<C>::class_name);
 	}
 	template<typename ...Args>
