@@ -1,358 +1,684 @@
-#ifndef CLUA_HEADER
-#define CLUA_HEADER
+#pragma once
 
-#include <tuple>
-#include <exception>
+#include <string>
+#include <cassert>
+
+#ifdef __CLUA_DLL__
+#define CLUADLLEXPORT(dllname)	\
+extern "C" __declspec(dllexport) int __cdecl luaopen_##dllname
+#endif
+
+template<typename Cls>
+struct Clsinfo {
+	static std::string cls_name;
+};
+
+template<typename Cls>
+std::string Clsinfo<Cls>::cls_name;
 
 template<typename ...T>
 struct resolve_args;
 
 template<>
 struct resolve_args<> {
-	static std::tuple<> resolve(lua_State *L, int nargs) {
+	static auto resolve(lua_State* l, int nargs) {
 		return std::make_tuple();
 	}
 };
 
-// args is int
-template<typename ...B>
-struct resolve_args<int, B...> {
-	static std::tuple<int, B...> resolve(lua_State *L, int nargs) {
-    if (lua_isinteger(L, -nargs) == 0)
-      throw exception("args is not integer !!!");
-		int i = (int)lua_tointeger(L, -nargs);
-		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
+template<typename ...Args>
+struct resolve_args<bool, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isboolean(l, -nargs) == 1);
+		auto i = (bool)lua_toboolean(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
 	}
 };
 
-// args is double
-template<typename ...B>
-struct resolve_args<double, B...> {
-	static std::tuple<double, B...> resolve(lua_State *L, int nargs) {
-    if (lua_isnumber(L, -nargs) == 0)
-      throw exception("args is not double !!!");
-		double i = (double)lua_tonumber(L, -nargs);
-		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
+template<typename ...Args>
+struct resolve_args<char, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isstring(l, -nargs) == 1);
+		auto i = (char)lua_tostring(l, -nargs)[0];
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
 	}
 };
 
-// args is float
-template<typename ...B>
-struct resolve_args<float, B...> {
-	static std::tuple<float, B...> resolve(lua_State *L, int nargs) {
-    if (lua_isnumber(L, -nargs) == 0)
-      throw exception("args is not float !!!");
-		float i = (float)lua_tonumber(L, -nargs);
-		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
+template<typename ...Args>
+struct resolve_args<unsigned char, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isstring(l, -nargs) == 1);
+		auto i = (unsigned char)lua_tostring(l, -nargs)[0];
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
 	}
 };
 
-// args is bool
-template<typename ...B>
-struct resolve_args<bool, B...> {
-	static std::tuple<bool, B...> resolve(lua_State *L, int nargs) {
-    if (lua_isboolean(L, -nargs) == 0)
-      throw exception("args is not bool !!!");
-		bool i = lua_toboolean(L, -nargs) != 0;
-		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
+template<typename ...Args>
+struct resolve_args<short int, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isinteger(l, -nargs) == 1);
+		auto i = (short int)lua_tointeger(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
 	}
 };
 
-// args is char *
-template<typename ...B>
-struct resolve_args<char*, B...> {
-	static std::tuple<char*, B...> resolve(lua_State *L, int nargs) {
-    if (lua_isstring(L, -nargs) == 0)
-      throw exception("args is not string !!!");
-		char* i = const_cast<char*>(lua_tostring(L, -nargs));
-		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
+template<typename ...Args>
+struct resolve_args<unsigned short int, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isinteger(l, -nargs) == 1);
+		auto i = (unsigned short int)lua_tointeger(l , -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
 	}
 };
 
-// args is const char*
-template<typename ...B>
-struct resolve_args<const char*, B...> {
-	static std::tuple<const char*, B...> resolve(lua_State *L, int nargs) {
-    if (lua_isstring(L, -nargs) == 0)
-      throw exception("args is not string !!!");
-		const char* i = (lua_tostring(L, -nargs));
-		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
+template<typename ...Args>
+struct resolve_args<int, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isinteger(l, -nargs) == 1);
+		auto i = (int)lua_tointeger(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
 	}
 };
 
-// args is pointer
-template<typename C, typename ...B>
-struct resolve_args<C*, B...> {
-	static std::tuple<C*, B...> resolve(lua_State *L, int nargs) {
-    if ((lua_isuserdata(L, -nargs) == 0) && (lua_islightuserdata(L, -nargs) == 0))
-      throw exception("args is not pointer !!!");
-		C* i = (C*)lua_touserdata(L, -nargs);
-		return std::tuple_cat(std::make_tuple(i), resolve_args<B...>::resolve(L, nargs - 1));
+/*template<typename ...Args>
+struct resolve_args<int&, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isinteger(l, -nargs) == 1);
+		int v = (int)lua_tointeger(l, -nargs);
+		int* i = (int*)lua_newuserdata(l, sizeof(int));
+		new (i) int(v);
+		return std::tuple_cat(std::tuple<std::reference_wrapper<int>>(std::ref(*i)), resolve_args<Args...>::resolve(l, nargs));
 	}
 };
 
-// args is class
-template<typename C, typename ...B>
-struct resolve_args<C, B...> {
-  static std::tuple<C, B...> resolve(lua_State *L, int nargs) {
-    if (lua_isuserdata(L, -nargs) == 0)
-      throw exception("args is not class !!!");
-    C* i = (C*)lua_touserdata(L, -nargs);
-    return std::tuple_cat(std::make_tuple(*i), resolve_args<B...>::resolve(L, nargs - 1));
-  }
+template<typename ...Args>
+struct resolve_args<const int&, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isinteger(l, -nargs) == 1);
+		int v = (int)lua_tointeger(l, -nargs);
+		int* i = (int*)lua_newuserdata(l, sizeof(int));
+		new (i) int(v); 
+		return std::tuple_cat(std::tuple<std::reference_wrapper<const int>>(std::cref(*i)), resolve_args<Args...>::resolve(l, nargs));
+	}
+};*/
+
+template<typename ...Args>
+struct resolve_args<unsigned int, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isinteger(l, -nargs) == 1);
+		auto i = (unsigned int)lua_tointeger(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
+	}
+};
+
+template<typename ...Args>
+struct resolve_args<long int, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isinteger(l, -nargs) == 1);
+		auto i = (long int)lua_tointeger(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
+	}
+};
+
+template<typename ...Args>
+struct resolve_args<unsigned long int, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isinteger(l, -nargs) == 1);
+		auto i = (unsigned long int)lua_tointeger(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
+	}
+};
+
+template<typename ...Args>
+struct resolve_args<long long int, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isinteger(l, -nargs) == 1);
+		auto i = (long long int)lua_tointeger(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
+	}
+};
+
+template<typename ...Args>
+struct resolve_args<unsigned long long int, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isinteger(l, -nargs) == 1);
+		auto i = (unsigned long long int)lua_tointeger(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
+	}
+};
+
+template<typename ...Args>
+struct resolve_args<float, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isnumber(l, -nargs) == 1);
+		auto i = (float)lua_tonumber(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
+	}
+};
+
+template<typename ...Args>
+struct resolve_args<double, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isnumber(l, -nargs) == 1);
+		auto i = (double)lua_tonumber(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
+	}
+};
+
+template<typename ...Args>
+struct resolve_args<long double, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isnumber(l, -nargs) == 1);
+		auto i = (long double)lua_tonumber(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
+	}
+};
+
+template<typename ...Args>
+struct resolve_args<const char*, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isstring(l, -nargs) == 1);
+		auto i = (const char*)lua_tostring(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
+	}
+};
+
+template<typename ...Args>
+struct resolve_args<std::string, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isstring(l, -nargs) == 1);
+		std::string i = (const char*)lua_tostring(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
+	}
+};
+
+template<typename T, typename ...Args>
+struct resolve_args<T*, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isuserdata(l, -nargs) == 1 || lua_islightuserdata(l, -nargs) == 1);
+		auto i = (T*)lua_touserdata(l, -nargs);
+		return std::tuple_cat(std::make_tuple(i), resolve_args<Args...>::resolve(l, nargs - 1));
+	}
+};
+
+template<typename T, typename ...Args>
+struct resolve_args<T&, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isuserdata(l, -nargs) == 1 || lua_islightuserdata(l, -nargs) == 1);
+		auto i = (T*)lua_touserdata(l, -nargs);
+		return std::tuple_cat(std::make_tuple(std::ref(*i)), resolve_args<Args...>::resolve(l, nargs - 1));
+	}
+};
+
+template<typename T, typename ...Args>
+struct resolve_args<T, Args...> {
+	static auto resolve(lua_State* l, int nargs) {
+		assert(lua_isuserdata(l, -nargs) == 1 || lua_islightuserdata(l, -nargs) == 1);
+		auto i = (T*)lua_touserdata(l, -nargs);
+		return std::tuple_cat(std::make_tuple(*i), resolve_args<Args...>::resolve(l, nargs - 1));
+	}
 };
 
 template<typename T>
-struct resolve_fp;
+struct resolve_ret;
 
-template<typename R, typename ...Args>
-struct resolve_fp<R(*)(Args...)> {
-	static const int nargs = sizeof...(Args);
-	using output_type = R;
-	static std::tuple<Args...> resolve(lua_State *L) {
-		return resolve_args<Args...>::resolve(L, nargs);
+template<>
+struct resolve_ret<bool> {
+	static void resolve(lua_State* l, bool value) {
+		lua_pushboolean(l, value);
 	}
 };
 
-template<typename R, typename C, typename ...Args>
-struct resolve_fp<R(C::*)(Args...)> {
-	static const int nargs = sizeof...(Args);
-	using output_type = R;
-	static std::tuple<Args...> resolve(lua_State *L) {
-		return resolve_args<Args...>::resolve(L, nargs);
+template<>
+struct resolve_ret<char> {
+	static void resolve(lua_State* l, char value) {
+		lua_pushinteger(l, value);
 	}
 };
 
-template<int N, typename R, typename T, T f>
-struct process_fp;
+template<>
+struct resolve_ret<unsigned char> {
+	static void resolve(lua_State* l, unsigned char value) {
+		lua_pushinteger(l, value);
+	}
+};
 
-template<typename R, typename T, T f>
-struct process_fp<0, R, T, f> {
+template<>
+struct resolve_ret<short int> {
+	static void resolve(lua_State* l, short int value) {
+		lua_pushinteger(l, value);
+	}
+};
+
+template<>
+struct resolve_ret<unsigned short int> {
+	static void resolve(lua_State* l, unsigned short int value) {
+		lua_pushinteger(l, value);
+	}
+};
+
+template<>
+struct resolve_ret<int> {
+	static void resolve(lua_State* l, int value) {
+		lua_pushinteger(l, value);
+	}
+};
+
+template<>
+struct resolve_ret<unsigned int> {
+	static void resolve(lua_State* l, unsigned int value) {
+		lua_pushinteger(l, value);
+	}
+};
+
+template<>
+struct resolve_ret<long int> {
+	static void resolve(lua_State* l, long int value) {
+		lua_pushinteger(l, value);
+	}
+};
+
+template<>
+struct resolve_ret<unsigned long int> {
+	static void resolve(lua_State* l, unsigned long int value) {
+		lua_pushinteger(l, value);
+	}
+};
+
+template<>
+struct resolve_ret<long long int> {
+	static void resolve(lua_State* l, long long int value) {
+		lua_pushinteger(l, value);
+	}
+};
+
+template<>
+struct resolve_ret<unsigned long long int> {
+	static void resolve(lua_State* l, unsigned long long int value) {
+		lua_pushinteger(l, value);
+	}
+};
+
+template<>
+struct resolve_ret<float> {
+	static void resolve(lua_State* l, float value) {
+		lua_pushnumber(l, value);
+	}
+};
+
+template<>
+struct resolve_ret<double> {
+	static void resolve(lua_State* l, double value) {
+		lua_pushnumber(l, value);
+	}
+};
+
+template<>
+struct resolve_ret<long double> {
+	static void resolve(lua_State* l, long double value) {
+		lua_pushnumber(l, value);
+	}
+};
+
+template<>
+struct resolve_ret<const char*> {
+	static void resolve(lua_State* l, const char* value) {
+		lua_pushstring(l, value);
+	}
+};
+
+template<>
+struct resolve_ret<std::string> {
+	static void resolve(lua_State* l, std::string value) {
+		lua_pushstring(l, value.c_str());
+	}
+};
+
+template<typename T>
+struct resolve_ret<T*> {
+	static void resolve(lua_State* l, T* value) {
+		lua_pushlightuserdata(l, value);
+	}
+};
+
+template<typename T>
+struct resolve_ret<T&> {
+	static void resolve(lua_State* l, T& value) {
+		lua_pushlightuserdata(l, &value);
+	}
+};
+
+template<typename T>
+struct resolve_ret {
+	static void resolve(lua_State* l, T value) {
+		auto cls = (T*)lua_newuserdata(l, sizeof(T));
+		new (cls) T(std::move(value));
+		assert(lua_getfield(l, LUA_REGISTRYINDEX, Clsinfo<T>::cls_name.c_str()) == LUA_TTABLE);
+		lua_setmetatable(l, -2);
+	}
+};
+
+template<int N, typename R>
+struct wrap_function;
+
+template<>
+struct wrap_function<0, void> {
 	template<typename Head, typename ...Args>
-	static void process(lua_State *L, Head t, Args... args) {
-		R ret = f(args...);
-		ret_fp<R>::ret(L, ret);
-	}
-};
-
-template<typename T, T f>
-struct process_fp<0, void, T, f> {
-	template<typename Head, typename ...Args>
-	static void process(lua_State *L, Head t, Args... args) {
+	static int run(lua_State *l, Head t, Args... args) {
+		typedef void(*FnPtr)(Args...);
+		auto f = reinterpret_cast<FnPtr>(lua_touserdata(l, lua_upvalueindex(1)));
 		f(args...);
+		return 0;
 	}
 };
 
-template<int N, typename R, typename T, T f>
-struct process_fp {
+template<typename Ret>
+struct wrap_function<0, Ret> {
+	template<typename Head, typename ...Args>
+	static int run(lua_State *l, Head t, Args... args) {
+		typedef Ret(*FnPtr)(Args...);
+		auto f = reinterpret_cast<FnPtr>(lua_touserdata(l, lua_upvalueindex(1)));
+		auto ret = f(args...);
+		resolve_ret<Ret>::resolve(l, ret);
+		return 1;
+	}
+};
+
+template<int N, typename Ret>
+struct wrap_function {
 	template<typename Head, typename ...Tail>
-	static void process(lua_State *L, Head t, Tail... args) {
+	static int run(lua_State* l, Head t, Tail... args) {
 		auto i = std::get<N - 1>(t);
-		process_fp<N - 1, R, T, f>::process(L, t, i, args...);
+		return wrap_function<N - 1, Ret>::run(l, t, i, args...);
 	}
 };
 
-template<int N, typename R, typename C, typename T, T f>
-struct process_cfp;
+template<typename Ret, typename ...Args>
+int clua_function(lua_State* l) {
+	auto args = resolve_args<Args...>::resolve(l, sizeof...(Args));
+	return wrap_function<sizeof...(Args), Ret>::run(l, args);
+}
 
-template<typename R, typename C, typename T, T f>
-struct process_cfp<0, R, C, T, f> {
-	template<typename Head, typename ...Tail>
-	static void process(lua_State *L, Head t, Tail... args) {
-		auto cls = (C*)lua_touserdata(L, -resolve_fp<T>::nargs - 1);
-		R ret = (cls->*f)(args...);
-		ret_fp<R>::ret(L, ret);
+template<int N, typename Cls>
+struct wrap_constructor_function;
+
+template<typename Cls>
+struct wrap_constructor_function<0, Cls> {
+	template<typename Head, typename ...Args>
+	static int run(lua_State *l, Head t, Args... args) {
+		auto cls = reinterpret_cast<Cls*>(lua_newuserdata(l, sizeof(Cls)));
+		new (cls)Cls(args...);
+		lua_getfield(l, LUA_REGISTRYINDEX, Clsinfo<Cls>::cls_name.c_str());
+		lua_setmetatable(l, -2);
+		return 1;
 	}
 };
 
-template<typename C, typename T, T f>
-struct process_cfp<0, void, C, T, f> {
+template<int N, typename Cls>
+struct wrap_constructor_function {
 	template<typename Head, typename ...Tail>
-	static void process(lua_State *L, Head t, Tail... args) {
-		auto cls = (C*)lua_touserdata(L, -resolve_fp<T>::nargs - 1);
+	static int run(lua_State* l, Head t, Tail... args) {
+		auto i = std::get<N - 1>(t);
+		return wrap_constructor_function<N - 1, Cls>::run(l, t, i, args...);
+	}
+};
+
+template<int N, typename Cls, typename Ret>
+struct wrap_member_function;
+
+template<typename Cls>
+struct wrap_member_function<0, Cls, void> {
+	template<typename Head, typename ...Args>
+	static int run(lua_State *l, Head t, Args... args) {
+		assert(lua_isuserdata(l, 1) == 1 || lua_islightuserdata(l, 1) == 1);
+		typedef void(Cls::*FnPtr)(Args...);
+		auto cls = reinterpret_cast<Cls*>(lua_touserdata(l, 1));
+		auto f = *reinterpret_cast<FnPtr*>(lua_touserdata(l, lua_upvalueindex(1)));
 		(cls->*f)(args...);
-	}
-};
-
-template<int N, typename R, typename C, typename T, T f>
-struct process_cfp {
-	template<typename Head, typename ...Tail>
-	static void process(lua_State *L, Head t, Tail... args) {
-		auto i = std::get<N - 1>(t);
-		process_cfp<N - 1, R, C, T, f>::process(L, t, i, args...);
-	}
-};
-
-template<int N, typename R, typename C, typename T, T f>
-struct process_cfp;
-
-template<int N, typename C>
-struct process_ccfp;
-
-template<typename C>
-struct process_ccfp<0, C> {
-	template<typename Head, typename ...Tail>
-	static void process(lua_State *L, Head t, Tail... args) {
-		C* cls = (C*)lua_newuserdata(L, sizeof(C));
-		new (cls)C(args...); 
-		lua_getglobal(L, clua_class<C>::class_name);
-		lua_setmetatable(L, -2);
-	}
-};
-
-template<int N, typename C>
-struct process_ccfp {
-	template<typename Head, typename ...Tail>
-	static void process(lua_State *L, Head t, Tail... args) {
-		auto i = std::get<N - 1>(t);
-		process_ccfp<N - 1, C>::process(L, t, i, args...);
-	}
-};
-
-template<typename T>
-struct ret_fp;
-
-// return is int
-template<>
-struct ret_fp<int> {
-	static void ret(lua_State *L, int value) {
-		lua_pushinteger(L, value);
-	}
-};
-
-// return is double
-template<>
-struct ret_fp<double> {
-	static void ret(lua_State *L, double value) {
-		lua_pushnumber(L, value);
-	}
-};
-
-// return is float
-template<>
-struct ret_fp<float> {
-	static void ret(lua_State *L, float value) {
-		lua_pushnumber(L, value);
-	}
-};
-
-// return is bool
-template<>
-struct ret_fp<bool> {
-	static void ret(lua_State *L, bool value) {
-		lua_pushboolean(L, value);
-	}
-};
-
-// return is char *
-template<>
-struct ret_fp<char *> {
-	static void ret(lua_State *L, const char* value) {
-		lua_pushstring(L, value);
-	}
-};
-
-// return is const char *
-template<>
-struct ret_fp<const char *> {
-	static void ret(lua_State *L, const char* value) {
-		lua_pushstring(L, value);
-	}
-};
-
-// return is pointer
-template<typename C>
-struct ret_fp<C*> {
-  static void ret(lua_State *L, C* value) {
-    lua_pushlightuserdata(L, (void *)value);
-  }
-};
-
-// return is class
-template<typename C>
-struct ret_fp {
-  static void ret(lua_State *L, C value) {
-    lua_newuserdata(L, sizeof(C));
-    new (cls)C(value);
-    lua_getglobal(L, clua_class<C>::class_name);
-    lua_setmetatable(L, -2);
-  }
-};
-
-template<typename T, T f>
-int clua_function(lua_State *L) {
-	auto args = resolve_fp<T>::resolve(L);
-	process_fp<resolve_fp<T>::nargs, resolve_fp<T>::output_type, T, f>::process(L, args);
-	if (std::is_same<resolve_fp<T>::output_type, void>::value)
 		return 0;
-	return 1;
+	}
+};
+
+template<typename Cls, typename Ret>
+struct wrap_member_function<0, Cls, Ret> {
+	template<typename Head, typename ...Args>
+	static int run(lua_State *l, Head t, Args... args) {
+		assert(lua_isuserdata(l, 1) == 1 || lua_islightuserdata(l, 1) == 1);
+		typedef Ret(Cls::*FnPtr)(Args...);
+		auto cls = reinterpret_cast<Cls*>(lua_touserdata(l, 1));
+		auto f = *reinterpret_cast<FnPtr*>(lua_touserdata(l, lua_upvalueindex(1)));
+		auto ret = (cls->*f)(args...);
+		resolve_ret<Ret>::resolve(l, ret);
+		return 1;
+	}
+};
+
+template<int N, typename Cls, typename Ret>
+struct wrap_member_function {
+	template<typename Head, typename ...Tail>
+	static int run(lua_State *l, Head t, Tail... args) {
+		auto i = std::get<N - 1>(t);
+		return wrap_member_function<N - 1, Cls, Ret>::run(l, t, i, args...);
+	}
+};
+
+template<typename Cls, typename ...Args>
+int clua_constructor_function(lua_State* l) {
+	auto args = resolve_args<Args...>::resolve(l, sizeof...(Args));
+	return wrap_constructor_function<sizeof...(Args), Cls>::run(l, args);
 }
 
-template<typename C, typename T, T f>
-int clua_cfunction(lua_State* L) {
-	auto args = resolve_fp<T>::resolve(L);
-	process_cfp<resolve_fp<T>::nargs, resolve_fp<T>::output_type, C, T, f>::process(L, args);
-	if (std::is_same<resolve_fp<T>::output_type, void>::value)
-		return 0;
-	return 1;
-}
-
-template<typename C, typename ...Args>
-int clua_ccfunction(lua_State* L) {
-	auto args = resolve_args<Args...>::resolve(L, sizeof...(Args));
-	process_ccfp<sizeof...(Args), C>::process(L, args);
-	return 1;
-}
-
-template<typename C>
-int clua_cdfunction(lua_State* L) {
-	C* cls = (C*)lua_touserdata(L, -1);
-	cls->~C();
+template<typename Cls>
+int clua_deconstructor_function(lua_State* l) {
+	if (lua_isuserdata(l, -1) == 1) {
+		auto cls = reinterpret_cast<Cls*>(lua_touserdata(l, -1));
+		cls->~Cls();
+	}
+	else if(lua_istable(l, -1) != 1)
+		assert(false);
 	return 0;
 }
 
-template<typename T, T f>
-void clua_register(lua_State *L, const char* n) {
-	int(*F)(lua_State*);
-	F = clua_function<T, f>;
-	lua_register(L, n, F);
+template<typename Cls, typename Ret, typename ...Args>
+int clua_classmember_function(lua_State* l) {
+	auto args = resolve_args<Args...>::resolve(l, sizeof...(Args));
+	return wrap_member_function<sizeof...(Args), Cls, Ret>::run(l, args);
 }
 
-template<typename C>
-class clua_class {
+class CLua {
 public:
-	static void registerClass(lua_State *L) {
-		lua_newtable(L);
-		lua_pushvalue(L, -1);
-		lua_setfield(L, -1, "__index");
-		auto cls_dcon = clua_cdfunction<C>;
-		lua_pushcfunction(L, cls_dcon);
-		lua_setfield(L, -2, "__gc");
-    if (clua_class<C>::class_name == nullptr)
-      throw std::exception("Class doesn't have name in lua!!!");
-		lua_setglobal(L, clua_class<C>::class_name);
-	}
-	template<typename ...Args>
-	static void registerConstructor(lua_State *L, const char* n = "new") {
-		lua_getglobal(L, clua_class<C>::class_name);
-		auto cls_new = clua_ccfunction<C, Args...>;
-		lua_pushcfunction(L, cls_new);
-		lua_setfield(L, -2, n);
-		lua_setglobal(L, clua_class<C>::class_name);
-	}
-	template<typename T, T f>
-	static void registerMemberFun(lua_State *L, const char* n) {
-		auto mf = clua_cfunction<C, T, f>;
-		lua_getglobal(L, clua_class<C>::class_name);
-		lua_pushcfunction(L, mf);
-		lua_setfield(L, -2, n);
-		lua_setglobal(L, clua_class<C>::class_name);
-	}
-public:
-	static char* class_name;
-};
 
-template<typename C>
-char* clua_class<C>::class_name = nullptr;
-
+#ifndef __CLUA_DLL__
+	CLua(lua_State* l, std::string n = ""):
+		_lua_state(l),
+		_pkg_name(n){
+		assert(l != nullptr);
+		if (_pkg_name != "") {
+			lua_newtable(l);
+			lua_setglobal(l, _pkg_name.c_str());
+		}
+	}
+#else
+	CLua(lua_State* l) :
+		_lua_state(l) {
+		assert(l != nullptr);
+		lua_newtable(l);
+	}
 #endif
+
+	template<typename T>
+	CLua& registerFunction(std::string fn, T f) {
+		_registerFunction(fn, f);
+		return *this;
+	}
+
+	template<typename Cls, typename ...Args>
+	CLua& registerClass(std::string cls, std::string pcls = "", std::string fn = "new") {
+		assert(cls != "");
+		auto lf = clua_deconstructor_function<Cls>;
+		Clsinfo<Cls>::cls_name = cls;
+#ifndef __CLUA_DLL__
+		addConstructor<std::is_abstract<Cls>::value, Cls, Args...>::add(_lua_state, _pkg_name, fn);
+#else
+		addConstructor<std::is_abstract<Cls>::value, Cls, Args...>::add(_lua_state, fn);
+#endif
+		lua_newtable(_lua_state);
+		lua_pushvalue(_lua_state, -1);
+		lua_setfield(_lua_state, -2, "__index");
+		lua_pushcclosure(_lua_state, lf, 0);
+		lua_setfield(_lua_state, -2, "__gc");
+		if (pcls != "") {
+			assert(lua_getfield(_lua_state, LUA_REGISTRYINDEX, pcls.c_str()) == LUA_TTABLE);
+			lua_setmetatable(_lua_state, -2);
+		}
+		lua_setfield(_lua_state, LUA_REGISTRYINDEX, cls.c_str());
+		return *this;
+	}
+
+	template<typename Cls, typename ...Args>
+	CLua& registerClassContructor(std::string cls, std::string fn) {
+#ifndef __CLUA_DLL__
+		addConstructor<std::is_abstract<Cls>::value, Cls, Args...>::add(_lua_state, _pkg_name, fn);
+#else
+		addConstructor<std::is_abstract<Cls>::value, Cls, Args...>::add(_lua_state, fn);
+#endif
+		return *this;
+	}
+
+	template<typename T>
+	CLua& registerClassMemberFunction(std::string fn, T f) {
+		_registerClassMemberFunction(fn, f);
+		return *this;
+	}
+
+	template<typename Cls, typename T>
+	CLua& registerClassStaticFunction(std::string fn, T f) {
+		_registerClassStaticFunction<Cls>(fn, f);
+		return *this;
+	}
+
+	~CLua() {}
+	
+private:
+
+	lua_State*	_lua_state;
+#ifndef __CLUA_DLL__
+	std::string _pkg_name;
+#endif
+
+	template<typename Ret, typename ...Args>
+	void _registerFunction(std::string fn, Ret(*f)(Args...)) {
+		auto lf = clua_function<Ret, Args...>;
+#ifndef __CLUA_DLL__
+		if (_pkg_name != "") {
+			assert(lua_getglobal(_lua_state, _pkg_name.c_str()) == LUA_TTABLE);
+			lua_pushlightuserdata(_lua_state, reinterpret_cast<void*>(f));
+			lua_pushcclosure(_lua_state, lf, 1);
+			lua_setfield(_lua_state, -2, fn.c_str());
+			lua_pop(_lua_state, 1);
+		}
+		else {
+			lua_pushlightuserdata(_lua_state, reinterpret_cast<void*>(f));
+			lua_pushcclosure(_lua_state, lf, 1);
+			lua_setglobal(_lua_state, fn.c_str());
+		}
+#else
+		lua_pushlightuserdata(_lua_state, reinterpret_cast<void*>(f));
+		lua_pushcclosure(_lua_state, lf, 1);
+		lua_setfield(_lua_state, -2, fn.c_str());
+#endif
+	}
+
+	template<bool, typename Cls, typename ...Args>
+	struct addConstructor;
+
+#ifndef __CLUA_DLL__
+	template<typename Cls, typename ...Args>
+	struct addConstructor<true, Cls, Args...> {
+		static void add(lua_State* l, std::string pkg_name, std::string fn) {
+
+		}
+	};
+#else
+	template<typename Cls, typename ...Args>
+	struct addConstructor<true, Cls, Args...> {
+		static void add(lua_State* l, std::string fn) {
+
+		}
+	};
+#endif
+
+#ifndef __CLUA_DLL__
+	template<typename Cls, typename ...Args>
+	struct addConstructor<false, Cls, Args...> {
+		static void add(lua_State* l, std::string pkg_name, std::string fn) {
+			auto lf = clua_constructor_function<Cls, Args...>;
+			if (pkg_name != "") {
+				lua_getglobal(l, pkg_name.c_str());
+				lua_newtable(l);
+				lua_pushcclosure(l, lf, 0);
+				lua_setfield(l, -2, fn.c_str());
+				lua_setfield(l, -2, Clsinfo<Cls>::cls_name.c_str());
+				lua_pop(l, 1);
+			}
+			else {
+				lua_newtable(l);
+				lua_pushcclosure(l, lf, 0);
+				lua_setfield(l, -2, "new");
+				lua_setglobal(l, Clsinfo<Cls>::cls_name.c_str());
+			}
+		}
+	};
+#else
+	template<typename Cls, typename ...Args>
+	struct addConstructor<false, Cls, Args...> {
+		static void add(lua_State* l, std::string fn) {
+			auto lf = clua_constructor_function<Cls, Args...>;
+			lua_newtable(l);
+			lua_pushcclosure(l, lf, 0);
+			lua_setfield(l, -2, fn.c_str());
+			lua_setfield(l, -2, Clsinfo<Cls>::cls_name.c_str());
+		}
+	};
+#endif
+
+	template<typename Cls, typename Ret, typename ...Args>
+	void _registerClassMemberFunction(std::string fn, Ret(Cls::*f)(Args...)) {
+		typedef Ret(Cls::*FnPtr)(Args...);
+		auto lf = clua_classmember_function<Cls, Ret, Args...>;
+		assert(lua_getfield(_lua_state, LUA_REGISTRYINDEX, Clsinfo<Cls>::cls_name.c_str()) == LUA_TTABLE);
+		new (lua_newuserdata(_lua_state, sizeof(FnPtr))) FnPtr(f);
+		lua_pushcclosure(_lua_state, lf, 1);
+		lua_setfield(_lua_state, -2, fn.c_str());
+		lua_pop(_lua_state, 1);
+	}
+
+	template<typename Cls, typename Ret, typename ...Args>
+	void _registerClassStaticFunction(std::string fn, Ret(*f)(Args...)) {
+		auto lf = clua_function<Ret, Args...>;
+#ifndef __CLUA_DLL__
+		if (_pkg_name != "") {
+			lua_getglobal(_lua_state, _pkg_name.c_str());
+			lua_getfield(_lua_state, -1, Clsinfo<Cls>::cls_name.c_str());
+			lua_pushlightuserdata(_lua_state, reinterpret_cast<void*>(f));
+			lua_pushcclosure(_lua_state, lf, 1);
+			lua_setfield(_lua_state, -2, fn.c_str());
+			lua_pop(_lua_state, 2);
+		} 
+		else {
+			lua_getglobal(_lua_state, Clsinfo<Cls>::cls_name.c_str());
+			lua_pushlightuserdata(_lua_state, reinterpret_cast<void*>(f));
+			lua_pushcclosure(_lua_state, lf, 1);
+			lua_setfield(_lua_state, -2, fn.c_str());
+			lua_pop(_lua_state, 1);
+		}
+#else
+		lua_getfield(_lua_state, -1, Clsinfo<Cls>::cls_name.c_str());
+		lua_pushlightuserdata(_lua_state, reinterpret_cast<void*>(f));
+		lua_pushcclosure(_lua_state, lf, 1);
+		lua_setfield(_lua_state, -2, fn.c_str());
+		lua_pop(_lua_state, 1);
+#endif
+	}
+
+};
