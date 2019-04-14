@@ -3,6 +3,9 @@
 #include <tuple>
 #include <exception>
 
+#define LUAMODULE(name)	\
+extern "C" __declspec(dllexport) int luaopen_##name(lua_State* pState)
+
 using CLuaException = std::exception;
 
 template<typename T>
@@ -16,22 +19,89 @@ struct RetCount<void> {
 };
 
 template<typename T>
-struct ResolveArgs;
+struct ResolveArgs {
+	static auto resolve(lua_State* pState, int pIndex) {
+		return lua_touserdata(pState, pIndex);
+	}
+};
+
+#define RESOLVEINT(type)	\
+template<>					\
+struct ResolveArgs<type> {	\
+	static auto resolve(lua_State* pState, int pIndex) {	\
+		return lua_tointeger(pState, pIndex);				\
+	}														\
+};	
+
+RESOLVEINT(short)
+RESOLVEINT(unsigned short)
+RESOLVEINT(int)
+RESOLVEINT(unsigned int)
+RESOLVEINT(long)
+RESOLVEINT(unsigned long)
+RESOLVEINT(long long)
+RESOLVEINT(unsigned long long)
+
+#undef RESOLVEINT
 
 template<>
-struct ResolveArgs<int> {
+struct ResolveArgs<float> {
 	static auto resolve(lua_State* pState, int pIndex) {
-		return lua_tointeger(pState, pIndex);
+		return lua_tonumber(pState, pIndex);
+	}
+};
+
+template<>
+struct ResolveArgs<double> {
+	static auto resolve(lua_State* pState, int pIndex) {
+		return lua_tonumber(pState, pIndex);
+	}
+};
+
+template<>
+struct ResolveArgs<const char*> {
+	static auto resolve(lua_State* pState, int pIndex) {
+		return lua_tostring(pState, pIndex);
 	}
 };
 
 template<typename T>
-struct ResolveRet;
+struct ResolveRet {
+	static void resolve(lua_State* l, T value) {
+		lua_pushlightuserdata(l, value);
+	}
+};
+
+#define RESOLVEINT(type)	\
+template<>					\
+struct ResolveRet<type> {	\
+	static void resolve(lua_State* l, type value) {	\
+		lua_pushinteger(l, value);					\
+	}	\
+};
+
+RESOLVEINT(short)
+RESOLVEINT(unsigned short)
+RESOLVEINT(int)
+RESOLVEINT(unsigned int)
+RESOLVEINT(long)
+RESOLVEINT(unsigned long)
+RESOLVEINT(long long)
+RESOLVEINT(unsigned long long)
+
+#undef RESOLVEINT
 
 template<>
-struct ResolveRet<int> {
-	static void resolve(lua_State* l, int value) {
-		lua_pushinteger(l, value);
+struct ResolveRet<float> {
+	static void resolve(lua_State* l, float value) {
+		lua_pushnumber(l, value);
+	}
+};
+
+template<>
+struct ResolveRet<double> {
+	static void resolve(lua_State* l, double value) {
+		lua_pushnumber(l, value);
 	}
 };
 
@@ -41,7 +111,7 @@ struct CLuaFun {
 	static int body(lua_State* pState, Param ...args) {
 		return CLuaFun<N - 1, Ret, Args...>::body(
 			pState,
-			ResolveArgs<std::tuple_element<N - 1, std::tuple<Args...>>::type>::resolve(pState, N+1),
+			ResolveArgs<std::tuple_element<N - 1, std::tuple<Args...>>::type>::resolve(pState, N),
 			args...);
 	}
 };
@@ -52,7 +122,16 @@ struct CLuaFun<0, Ret, Args...> {
 	static int body(lua_State* pState, Args... args) {
 		auto fpointer = (Ret(*)(Args...))lua_touserdata(pState, lua_upvalueindex(1));
 		ResolveRet<Ret>::resolve(pState, fpointer(args...));
-		return RetCount<Ret>::value;
+		return 1;
+	}
+};
+
+template<typename ...Args>
+struct CLuaFun<0, void, Args...> {
+	template<typename ...Args>
+	static int body(lua_State* pState, Args... args) {
+		auto fpointer = (void(*)(Args...))lua_touserdata(pState, lua_upvalueindex(1));
+		return 0;
 	}
 };
 
@@ -61,8 +140,8 @@ struct CLuaCXXConstructorFun {
 	template<typename ...Param>
 	static int body(lua_State* pState, Param ...args) {
 		return CLuaCXXConstructorFun<N - 1, Cls, Args...>::body(
-			pState, 
-			ResolveArgs<std::tuple_element<N - 1, std::tuple<Args...>>::type>::resolve(pState, N+1),
+			pState,
+			ResolveArgs<std::tuple_element<N - 1, std::tuple<Args...>>::type>::resolve(pState, N + 1),
 			args...);
 	}
 };
@@ -85,7 +164,7 @@ struct CLuaCXXMemberFun {
 	static int body(lua_State* pState, Param ...args) {
 		return CLuaCXXMemberFun<N - 1, Cls, Ret, Args...>::body(
 			pState,
-			ResolveArgs<std::tuple_element<N - 1, std::tuple<Args...>>::type>::resolve(pState, N+1),
+			ResolveArgs<std::tuple_element<N - 1, std::tuple<Args...>>::type>::resolve(pState, N + 1),
 			args...);
 	}
 };
@@ -98,7 +177,19 @@ struct CLuaCXXMemberFun<0, Cls, Ret, Args...> {
 		auto fpointer = *reinterpret_cast<FnPtr*>(lua_touserdata(pState, lua_upvalueindex(1)));
 		auto obj = (Cls*)lua_touserdata(pState, 1);
 		ResolveRet<Ret>::resolve(pState, (obj->*fpointer)(args...));
-		return RetCount<Ret>::value;
+		return 1;
+	}
+};
+
+template<typename Cls, typename ...Args>
+struct CLuaCXXMemberFun<0, Cls, void, Args...> {
+	template<typename ...Args>
+	static int body(lua_State* pState, Args... args) {
+		typedef void(Cls::*FnPtr)(Args...);
+		auto fpointer = *reinterpret_cast<FnPtr*>(lua_touserdata(pState, lua_upvalueindex(1)));
+		auto obj = (Cls*)lua_touserdata(pState, 1);
+		(obj->*fpointer)(args...);
+		return 0;
 	}
 };
 
@@ -106,7 +197,7 @@ template<typename Cls>
 struct CLuaCXXDeconstructor {
 	static int body(lua_State* pState) {
 		auto obj = (Cls*)lua_touserdata(pState, -1);
-		obj->~Cls();
+		if(obj) obj->~Cls();
 		return 0;
 	}
 };
@@ -210,20 +301,42 @@ public:
 		}
 	}
 
+	template<typename Cls, typename Ret, typename ...Args>
+	void registerCXXMemberFuntion(const char* pName, Ret(Cls::*pFun)(Args...) const) {
+		typedef Ret(Cls::*FnPtr)(Args...) const;
+		if (ClassInfo<Cls>::name.empty())
+			throw CLuaException("Clua.registerCXXMemberFuntion: Class doesn't exists in global!");
+		if (_table.empty()) {
+			lua_getglobal(_state, ClassInfo<Cls>::name.c_str());
+			lua_CFunction fpointer = CLuaCXXMemberFun<sizeof...(Args), Cls, Ret, Args...>::body;
+			new (lua_newuserdata(_state, sizeof(FnPtr))) FnPtr(pFun);
+			lua_pushcclosure(_state, fpointer, 1);
+			lua_setfield(_state, -2, pName);
+		} else {
+			lua_getglobal(_state, _table.c_str());
+			lua_getfield(_state, -1, ClassInfo<Cls>::name.c_str());
+			lua_CFunction fpointer = CLuaCXXMemberFun<sizeof...(Args), Cls, Ret, Args...>::body;
+			new (lua_newuserdata(_state, sizeof(FnPtr))) FnPtr(pFun);
+			lua_pushcclosure(_state, fpointer, 1);
+			lua_setfield(_state, -2, pName);
+		}
+	}
+
 	template<typename Ret, typename ...Args>
 	void registerCFuntion(const char* pName, Ret(*pFun)(Args...)) {
 		if (_table.empty()) {
 			lua_pushlightuserdata(_state, pFun);
 			lua_CFunction fpointer = CLuaFun<sizeof...(Args), Ret, Args...>::body;
 			lua_pushcclosure(_state, fpointer, 1);
-			if (lua_getglobal(_state, pName) != LUA_TNIL)
+			/*if (lua_getglobal(_state, pName) != LUA_TNIL)
 				throw CLuaException("Clua.registerCFunction: Value exists in global!");
+			lua_pop(_state, 1);*/
 			lua_setglobal(_state, pName);
 		} else {
 			if (lua_getglobal(_state, _table.c_str()) != LUA_TTABLE)
 				throw CLuaException("Clua.registerCFuntion: Can't find table!");
-			if (lua_getfield(_state, -1, pName) != LUA_TNIL)
-				throw CLuaException("Clua.registerCFunction: Value exists in table!");
+			/*if (lua_getfield(_state, -1, pName) != LUA_TNIL)
+				throw CLuaException("Clua.registerCFunction: Value exists in table!");*/
 			lua_pushlightuserdata(_state, pFun);
 			lua_CFunction fpointer = CLuaFun<sizeof...(Args), Ret, Args...>::body;
 			lua_pushcclosure(_state, fpointer, 1);

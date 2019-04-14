@@ -4,54 +4,36 @@ Clua is used to register c++ classes and functions in lua.
 
 # Example
 
-## Register Function
-<main.cpp>
 ```
-int add(int i, int j) {
-	return i + j;
+int add(int p1, int p2) {
+	return p1 + p2;
 }
-int main(){
-	lua_State* L;
-	L = luaL_newstate();
-	luaL_openlibs(L);
-	clua_register<int(*)(int, int), add>(L, "add");
-	luaL_dofile(L, "hello.lua");
-	lua_close(L); 
-}
-```
-<hello.lua>
-```
-print(add(1, 2))
-```
-## Register Class
-<main.cpp>
-```
-class Test {
+
+class Point {
 public:
-	Test(int id = 13):id(id) {}
-	void setID(int id) { this->id = id; }
-	int getID() { return this->id; }
+	Point(double pX, double pY):
+		_x(pX),_y(pY){}
+	void add(Point pPoint) {
+		_x += pPoint._x;
+		_y += pPoint._y;
+	}
 private:
-	int id;
+	double _x, _y;
 };
 
-int main(){
-	lua_State* L;
-	L = luaL_newstate();
-	luaL_openlibs(L);
-	clua_class<Test>::class_name = "Test";
-	clua_class<Test>::registerClass(L);
-	clua_class<Test>::registerConstructor<int>(L);
-	clua_class<Test>::registerMemberFun<void(Test::*)(int), &Test::setID>(L, "setID");
-	clua_class<Test>::registerMemberFun<int(Test::*)(), &Test::getID>(L, "getID");
-	luaL_dofile(L, "hello.lua");
-	lua_close(L);   
+int main() {
+	lua_State* l = luaL_newstate();
+	CLua reg(l);
+	reg.registerCFuntion("c_add", add);
+	reg.registerClass<Point>("CPoint");
+	reg.registerCXXConstructorFuntion<Point, double, double>("new");
+	reg.registerCXXMemberFuntion("add", &Point::add);
+	luaL_dostring(l, "					\
+		res = c_add(4, 5);				\
+		p1 = CPoint:new(res, res+10);			\
+		p2 = CPoint:new(2, 4.5);			\
+		p1:add(p2);");
+	lua_close(l);
+	return 0;
 }
-```
-<hello.lua>
-```
-a = Test.new(32)
-print(a:getID())
-a:setID(15)
-print(a:getID())
 ```
