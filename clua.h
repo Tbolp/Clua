@@ -1,4 +1,6 @@
-#pragma once
+#ifndef __CLUA_H__
+#define __CLUA_H__
+
 #include <string>
 #include <tuple>
 #include <exception>
@@ -19,7 +21,10 @@ struct RetCount<void> {
 };
 
 template<typename T>
-struct ResolveArgs {
+struct ResolveArgs;
+
+template<typename T>
+struct ResolveArgs<T*> {
 	static auto resolve(lua_State* pState, int pIndex) {
 		return lua_touserdata(pState, pIndex);
 	}
@@ -28,7 +33,7 @@ struct ResolveArgs {
 #define RESOLVEINT(type)	\
 template<>					\
 struct ResolveArgs<type> {	\
-	static auto resolve(lua_State* pState, int pIndex) {	\
+	static type resolve(lua_State* pState, int pIndex) {	\
 		return lua_tointeger(pState, pIndex);				\
 	}														\
 };	
@@ -66,8 +71,11 @@ struct ResolveArgs<const char*> {
 };
 
 template<typename T>
-struct ResolveRet {
-	static void resolve(lua_State* l, T value) {
+struct ResolveRet;
+
+template<typename T>
+struct ResolveRet<T*> {
+	static void resolve(lua_State* l, T* value) {
 		lua_pushlightuserdata(l, value);
 	}
 };
@@ -111,7 +119,7 @@ struct CLuaFun {
 	static int body(lua_State* pState, Param ...args) {
 		return CLuaFun<N - 1, Ret, Args...>::body(
 			pState,
-			ResolveArgs<std::tuple_element<N - 1, std::tuple<Args...>>::type>::resolve(pState, N),
+			ResolveArgs<std::tuple_element_t<N - 1, std::tuple<Args...>>>::resolve(pState, N),
 			args...);
 	}
 };
@@ -131,6 +139,7 @@ struct CLuaFun<0, void, Args...> {
 	template<typename ...Args>
 	static int body(lua_State* pState, Args... args) {
 		auto fpointer = (void(*)(Args...))lua_touserdata(pState, lua_upvalueindex(1));
+		fpointer(args...);
 		return 0;
 	}
 };
@@ -141,7 +150,7 @@ struct CLuaCXXConstructorFun {
 	static int body(lua_State* pState, Param ...args) {
 		return CLuaCXXConstructorFun<N - 1, Cls, Args...>::body(
 			pState,
-			ResolveArgs<std::tuple_element<N - 1, std::tuple<Args...>>::type>::resolve(pState, N + 1),
+			ResolveArgs<std::tuple_element_t<N - 1, std::tuple<Args...>>>::resolve(pState, N + 1),
 			args...);
 	}
 };
@@ -164,8 +173,8 @@ struct CLuaCXXMemberFun {
 	static int body(lua_State* pState, Param ...args) {
 		return CLuaCXXMemberFun<N - 1, Cls, Ret, Args...>::body(
 			pState,
-			ResolveArgs<std::tuple_element<N - 1, std::tuple<Args...>>::type>::resolve(pState, N + 1),
-			args...);
+			ResolveArgs<std::tuple_element_t<N - 1, std::tuple<Args...>>>::resolve(pState, N + 1),
+			std::forward<Param>(args)...);
 	}
 };
 
@@ -176,7 +185,7 @@ struct CLuaCXXMemberFun<0, Cls, Ret, Args...> {
 		typedef Ret(Cls::*FnPtr)(Args...);
 		auto fpointer = *reinterpret_cast<FnPtr*>(lua_touserdata(pState, lua_upvalueindex(1)));
 		auto obj = (Cls*)lua_touserdata(pState, 1);
-		ResolveRet<Ret>::resolve(pState, (obj->*fpointer)(args...));
+		ResolveRet<Ret>::resolve(pState, (obj->*fpointer)(std::forward<Args>(args)...));
 		return 1;
 	}
 };
@@ -248,9 +257,11 @@ public:
 			lua_getglobal(_state, _table.c_str());
 			if (lua_getfield(_state, -1, pName) != LUA_TNIL)
 				throw CLuaException("Clua.registerClass:  Value exists in global!");
-			if (!pname.empty())
+			if (!pname.empty()){
+				lua_pop(_state, 1);
 				if (lua_getfield(_state, -1, pParent) != LUA_TTABLE)
 					throw CLuaException("Clua.registerClass:  Parent doesn't exists in global!");
+			}
 			lua_settop(_state, 0);
 			lua_getglobal(_state, _table.c_str());
 			lua_newtable(_state);
@@ -267,7 +278,7 @@ public:
 	}
 
 	template<typename Cls, typename ...Args>
-	void registerCXXConstructorFuntion(const char* pName) {
+	void registerCXXConstructorFunction(const char* pName) {
 		if (ClassInfo<Cls>::name.empty())
 			throw CLuaException("Clua.registerCXXConstructorFuntion: Class doesn't exists in global!");
 		if (_table.empty()) {
@@ -276,12 +287,17 @@ public:
 			lua_pushcclosure(_state, fpointer, 0);
 			lua_setfield(_state, -2, pName);
 		} else {
-			/// pass
+			if (lua_getglobal(_state, _table.c_str()) != LUA_TTABLE)
+				throw CLuaException("Clua.registerCFuntion: Can't find table!");
+			lua_getfield(_state, -1, ClassInfo<Cls>::name.c_str());
+			lua_CFunction fpointer = CLuaCXXConstructorFun<sizeof...(Args), Cls, Args...>::body;
+			lua_pushcclosure(_state, fpointer, 0);
+			lua_setfield(_state, -2, pName);
 		}
 	}
 
 	template<typename Cls, typename Ret, typename ...Args>
-	void registerCXXMemberFuntion(const char* pName, Ret(Cls::*pFun)(Args...)) {
+	void registerCXXMemberFunction(const char* pName, Ret(Cls::*pFun)(Args...)) {
 		typedef Ret(Cls::*FnPtr)(Args...);
 		if (ClassInfo<Cls>::name.empty())
 			throw CLuaException("Clua.registerCXXMemberFuntion: Class doesn't exists in global!");
@@ -292,7 +308,8 @@ public:
 			lua_pushcclosure(_state, fpointer, 1);
 			lua_setfield(_state, -2, pName);
 		} else {
-			lua_getglobal(_state, _table.c_str());
+			if (lua_getglobal(_state, _table.c_str()) != LUA_TTABLE)
+				throw CLuaException("Clua.registerCFuntion: Can't find table!");
 			lua_getfield(_state, -1, ClassInfo<Cls>::name.c_str());
 			lua_CFunction fpointer = CLuaCXXMemberFun<sizeof...(Args), Cls, Ret, Args...>::body;
 			new (lua_newuserdata(_state, sizeof(FnPtr))) FnPtr(pFun);
@@ -302,7 +319,7 @@ public:
 	}
 
 	template<typename Cls, typename Ret, typename ...Args>
-	void registerCXXMemberFuntion(const char* pName, Ret(Cls::*pFun)(Args...) const) {
+	void registerCXXMemberFunction(const char* pName, Ret(Cls::*pFun)(Args...) const) {
 		typedef Ret(Cls::*FnPtr)(Args...) const;
 		if (ClassInfo<Cls>::name.empty())
 			throw CLuaException("Clua.registerCXXMemberFuntion: Class doesn't exists in global!");
@@ -313,7 +330,8 @@ public:
 			lua_pushcclosure(_state, fpointer, 1);
 			lua_setfield(_state, -2, pName);
 		} else {
-			lua_getglobal(_state, _table.c_str());
+			if (lua_getglobal(_state, _table.c_str()) != LUA_TTABLE)
+				throw CLuaException("Clua.registerCFuntion: Can't find table!");
 			lua_getfield(_state, -1, ClassInfo<Cls>::name.c_str());
 			lua_CFunction fpointer = CLuaCXXMemberFun<sizeof...(Args), Cls, Ret, Args...>::body;
 			new (lua_newuserdata(_state, sizeof(FnPtr))) FnPtr(pFun);
@@ -322,8 +340,45 @@ public:
 		}
 	}
 
+	template<typename Cls, typename Ret, typename ...Args>
+	void registerCXXMemberFunction(const char* pName, Ret(*pFun)(Cls*, Args...)) {
+		if (ClassInfo<Cls>::name.empty())
+			throw CLuaException("Clua.registerCXXMemberFuntion: Class doesn't exists in global!");
+		if (_table.empty()) {
+			lua_getglobal(_state, ClassInfo<Cls>::name.c_str());
+			lua_pushlightuserdata(_state, pFun);
+			lua_CFunction fpointer = CLuaFun<sizeof...(Args) + 1, Ret, Cls*, Args...>::body;
+			lua_pushcclosure(_state, fpointer, 1);
+			lua_setfield(_state, -2, pName);
+		}
+		else {
+			if (lua_getglobal(_state, _table.c_str()) != LUA_TTABLE)
+				throw CLuaException("Clua.registerCFuntion: Can't find table!");
+			lua_getfield(_state, -1, ClassInfo<Cls>::name.c_str());
+			lua_pushlightuserdata(_state, pFun);
+			lua_CFunction fpointer = CLuaFun<sizeof...(Args) + 1, Ret, Cls*, Args...>::body;
+			lua_pushcclosure(_state, fpointer, 1);
+			lua_setfield(_state, -2, pName);
+		}
+	}
+
+	template<typename Cls>
+	void registerCXXInstance(const char* pName, Cls* pInstance) {
+		lua_pushlightuserdata(_state, pInstance);
+		if (_table == "") {
+			lua_setglobal(_state, pName);
+		}
+		else {
+			if (lua_getglobal(_state, _table.c_str()) != LUA_TTABLE)
+				throw CLuaException("Clua.registerCFuntion: Can't find table!");
+			lua_pushvalue(_state, -2);
+			lua_setfield(_state, -2, pName);
+			lua_pop(_state, 1);
+		}
+	}
+
 	template<typename Ret, typename ...Args>
-	void registerCFuntion(const char* pName, Ret(*pFun)(Args...)) {
+	void registerCFunction(const char* pName, Ret(*pFun)(Args...)) {
 		if (_table.empty()) {
 			lua_pushlightuserdata(_state, pFun);
 			lua_CFunction fpointer = CLuaFun<sizeof...(Args), Ret, Args...>::body;
@@ -348,3 +403,5 @@ private:
 	lua_State*	_state;
 	std::string _table;
 };
+
+#endif

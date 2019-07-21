@@ -4,36 +4,53 @@ Clua is used to register c++ classes and functions in lua.
 
 # Example
 
+main.cpp
 ```
-int add(int p1, int p2) {
-	return p1 + p2;
-}
+int main(){
+	using namespace std;
+	unique_ptr<lua_State, decltype(&lua_close)> lua_state_mgr(luaL_newstate(), lua_close);
+	lua_State* state = lua_state_mgr.get();
+	luaL_openlibs(state);
 
-class Point {
-public:
-	Point(double pX, double pY):
-		_x(pX),_y(pY){}
-	void add(Point pPoint) {
-		_x += pPoint._x;
-		_y += pPoint._y;
-	}
-private:
-	double _x, _y;
-};
+	// all variable in global
+	CLua clua(state);
 
-int main() {
-	lua_State* l = luaL_newstate();
-	CLua reg(l);
-	reg.registerCFuntion("c_add", add);
-	reg.registerClass<Point>("CPoint");
-	reg.registerCXXConstructorFuntion<Point, double, double>("new");
-	reg.registerCXXMemberFuntion("add", &Point::add);
-	luaL_dostring(l, "					\
-		res = c_add(4, 5);				\
-		p1 = CPoint:new(res, res+10);			\
-		p2 = CPoint:new(2, 4.5);			\
-		p1:add(p2);");
-	lua_close(l);
-	return 0;
+	// register c function
+	clua.registerCFunction("f1", static_cast<void(*)()>([]()->void {
+		ogger::WriteMessage("f1 with no return value and args");
+	}));
+
+	// register c++ class
+	clua.registerClass<vector<int>>("vector");
+	clua.registerCXXConstructorFunction<vector<int>, size_t>("new");
+
+	// register c++ member function
+	clua.registerCXXMemberFunction<vector<int>>(
+		"pop_back",
+		&vector<int>::pop_back
+	);
+
+	// register c function as c++ member function
+	clua.registerCXXMemberFunction<vector<int>>(
+		"push_back", 
+		static_cast<void(*)(vector<int>*, int)>([](vector<int>* p, int v) {
+			p->push_back(v);
+	}));
+
+	// register c++ instance
+	vector<int> v;
+	v.push_back(2);
+	clua.registerCXXInstance("c_vec", &v);
+
+	return luaL_dofile(state, "test.lua");
 }
+```
+
+test.lua
+```
+f1()
+v = vector:new(5)
+v:pop_back()
+v:push_back(1)
+vector.push_back(c_vec, 3)
 ```
