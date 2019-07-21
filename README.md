@@ -4,54 +4,53 @@ Clua is used to register c++ classes and functions in lua.
 
 # Example
 
-## Register Function
-<main.cpp>
+main.cpp
 ```
-int add(int i, int j) {
-	return i + j;
-}
 int main(){
-	lua_State* L;
-	L = luaL_newstate();
-	luaL_openlibs(L);
-	clua_register<int(*)(int, int), add>(L, "add");
-	luaL_dofile(L, "hello.lua");
-	lua_close(L); 
-}
-```
-<hello.lua>
-```
-print(add(1, 2))
-```
-## Register Class
-<main.cpp>
-```
-class Test {
-public:
-	Test(int id = 13):id(id) {}
-	void setID(int id) { this->id = id; }
-	int getID() { return this->id; }
-private:
-	int id;
-};
+	using namespace std;
+	unique_ptr<lua_State, decltype(&lua_close)> lua_state_mgr(luaL_newstate(), lua_close);
+	lua_State* state = lua_state_mgr.get();
+	luaL_openlibs(state);
 
-int main(){
-	lua_State* L;
-	L = luaL_newstate();
-	luaL_openlibs(L);
-	clua_class<Test>::class_name = "Test";
-	clua_class<Test>::registerClass(L);
-	clua_class<Test>::registerConstructor<int>(L);
-	clua_class<Test>::registerMemberFun<void(Test::*)(int), &Test::setID>(L, "setID");
-	clua_class<Test>::registerMemberFun<int(Test::*)(), &Test::getID>(L, "getID");
-	luaL_dofile(L, "hello.lua");
-	lua_close(L);   
+	// all variable in global
+	CLua clua(state);
+
+	// register c function
+	clua.registerCFunction("f1", static_cast<void(*)()>([]()->void {
+		ogger::WriteMessage("f1 with no return value and args");
+	}));
+
+	// register c++ class
+	clua.registerClass<vector<int>>("vector");
+	clua.registerCXXConstructorFunction<vector<int>, size_t>("new");
+
+	// register c++ member function
+	clua.registerCXXMemberFunction<vector<int>>(
+		"pop_back",
+		&vector<int>::pop_back
+	);
+
+	// register c function as c++ member function
+	clua.registerCXXMemberFunction<vector<int>>(
+		"push_back", 
+		static_cast<void(*)(vector<int>*, int)>([](vector<int>* p, int v) {
+			p->push_back(v);
+	}));
+
+	// register c++ instance
+	vector<int> v;
+	v.push_back(2);
+	clua.registerCXXInstance("c_vec", &v);
+
+	return luaL_dofile(state, "test.lua");
 }
 ```
-<hello.lua>
+
+test.lua
 ```
-a = Test.new(32)
-print(a:getID())
-a:setID(15)
-print(a:getID())
+f1()
+v = vector:new(5)
+v:pop_back()
+v:push_back(1)
+vector.push_back(c_vec, 3)
 ```
